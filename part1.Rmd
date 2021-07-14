@@ -1,0 +1,556 @@
+---
+title: "Digital Contact Tracing"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+### Author: Group 16
+#### Names: Rachana Anil, Smriti Bajaj, Urvin Desai
+
+## 1.	Introduction
+
+Digital Contact Tracing adopted here is based on Case investigation and contact tracing, a core disease control measure employed by local and state health department personnel for decades. It is a key strategy for preventing further spread of COVID-19. 
+We have employed keeping in mind both the manual efforts required to keep track of patient’s records also known as case management, and proximity tracing which is purely a technical approach. Technology can support case investigation and contact tracing but cannot take the place of a trained public health workforce for interviewing, counseling, and providing support for those impacted by COVID-19.
+The PACT (Private Automated Contact Tracing) protocol describes digital contact tracing as a simple, decentralized approach to using smartphones for contact tracing based on Bluetooth proximity. To promote automated support for tools while understanding and adopting the protocol, we have covered a few essential principles for the data management, namely:
+
+**Patient Identification**
+
+**Contact Elicitation / Identification** 
+
+**Contact Notification** 
+
+**Patient / Contact Follow up and Monitoring** 
+
+**Personal Privacy and Data Security**
+
+**Localization**
+
+**Workflow Management and Reporting**
+
+## 2.	Assumptions
+
+Before having a glance at the models, we have laid out certain key assumptions that would bind Digital Contact Tracing to limited expectations:
+
+•	All the users of the application will have their basic information stored which unless required will not be available to sharing or viewing per se.
+
+•	The models are designed keeping in mind that persons can share same residential addresses but can have unique email ids and phone numbers.
+
+•	We have considered Person and AppUser as abstract classes and are related through disjoint generalization with their children.
+
+•	If a user is tested to be positive, they will have to self-report themselves as positive in the application and thereon, will be referred to as a Patient.
+
+•	This data will be validated by a health professional or health investigator who can also be an authorized user who can view specific information of contacts and patients.
+
+•	The patient could have had contact with no or many people and thus those contacts are at the risk of getting the virus depending on certain factors, like, distance between the patient and the contact, duration of their meet and wearing masks or not. 
+
+•	If a contact is tested positive, he/she will be moved to patient table and deleted from the contact table. And then the contacts of the infected contact(who's a patient now) will be enlisted in the contacts table. 
+
+•	The distances are to be calculated electronically by using BLE technology which is based on Signal strength.
+
+•	These contacts as are part of the application, will be notified by means of customized and automated Text, Voice Message, Call or Email.
+
+•	Following that, the contact should self-report their data into the application and thus health investigator will determine what medication to provide.
+
+•	Both patients and contacts can report symptoms and their severity in the app. An app user can have 0 or more symptoms.
+
+•	A health investigator will follow-up with both patients and contacts for a period of 14 days to know their condition. 
+
+•	Alongside, the patients or contacts will be provided with mandatory Services as and when opted for.
+
+•	Although the data privacy is maintained and periodic cleanup is done, the symptoms and location details of the patient and contacts are being stored for history purposes to be used in case of reoccurrence of the disease and analysis purpose.
+
+## 3. Conceptual Model 
+
+A conceptual model ensures that not only various entities of an organization and relationships are represented but also other components such as functional modules of the software system, interactions among them, user interactions with the system are also visualized. Such components can be specified using a standard called Unified Modeling Language (UML) which is illustrated in the diagram below- 
+
+![Fig 3.1 :Conceptual Model for Digital Contact Tracing in Enterprise Architect](D:/NEU/5200 DBMS/Practicum1/ConceptualGroup16.jpg)
+
+
+
+## 4. Logical Model 
+
+A logical data model or logical schema is a data model of a specific problem domain expressed independently of a database management tool but in terms of data structures such as relational tables and columns, object-oriented classes, or XML tags. Here, a logical model is represented as an entity relationship diagram in IE notation using relations.
+
+![Fig 4.1 :Logical Model for Digital Contact Tracing in Lucid Chart](D:/NEU/5200 DBMS/Practicum1/LogicalGroup16.jpg)
+
+[Logical Model](https://app.lucidchart.com/documents/edit/3095418d-d984-41e0-a753-30a497bc2b2f/0_0?shared=true#?folder_id=home&browser=icon)
+
+## 5. Relational Schema 
+
+A relational schema of a relation name R and a set of attributes A1, A2, A3.. An and is represented as R(A1, A2, A3.. An). The logical model shown above can be resolved into following schemas. 
+
+
+Person (<u>pId</u>, email,pFirstName,pLastName,phoneNumber,gender,age,*addressId*)
+
+Location (<u>addressId</u>,blockNumber,street,*zipCode*)
+
+Zip (<u>zipCode</u>, city, state)
+
+HealthInvestigator (<u>*pId*</u>,hOrganization, qualification,roleName)
+
+AppUser (<u>*pId*</u>,aLanguage,loggingDate,testResult)
+
+Patient (<u>*pId*</u>,healthReportValidated,typeOfTreatment, recovered) 
+
+Contact (<u>*pId*,*notificationId*</u>) 
+
+AuthorisedUser (<u>userId</u>,userPassword,accessLevel,*pId*)
+
+Notification (<u>notificationId</u>,nMode, instructions,notificationTime,*hId*) 
+
+Meets (<u>*patientId*,*contactId*</u>, distance,startTime,endTime,maskWorn)
+
+Has (<u>*pId*,*sId*</u>) 
+
+Symptom (<u>sId</u>,sName, severity) 
+
+IsProvided (<u>*pId*,*serviceId*</u>) 
+
+Service (<u>*serviceId*</u>,serviceType) 
+
+Views (<u>*userId*,*pId*</u>) 
+
+FollowUp (<u>followUpId</u>,followUpDay,symptomCheck,temperatureInF,*pId*,*hId*) 
+
+## 6. Functional Dependencies 
+
+A relational schema R is considered to be in Boyce–Codd normal form (BCNF) if, for every one of its dependencies X → Y, one of the following conditions holds true: 
+ 
+•	X → Y is a TRIVIAL FUNCTIONAL DEPENDENCY (i.e., Y is a subset of X) 
+
+•	X is a SUPERKEY for schema R 
+
+**Person** : 
+
+pId -> pFirstName, pLastName, gender, age, addressId 
+
+email-> pFirstName, pLastName,gender, age,addressId 
+
+phoneNumber-> pFirstName,pLastName,gender, age,addressId 
+
+(Here, there are 3 candidate keys: pId, email and phoneNumber which uniquely identifies non-key attributes (pFirstName, pLastName, gender, age, addressId ) which satisfies BCNF) 
+
+**Location** :  addressId ->  blockNumber, street, zipCode 
+
+**Zip**: zipCode -> city, state     
+
+**HealthInvestigator** :  pId -> hOrganization, qualification, roleName 
+
+**AppUser** :  pId ->  aLanguage, loggingDate, testResult 
+
+**Patient**  : pid -> healthReportValidated, typeOfTreatment, recovered 
+
+**Contact** :  pid ->  notificationId 
+
+**AuthorisedUser** :
+
+userId ->  userPassword, accessLevel
+
+pId -> userPassword, accessLevel  
+
+(Here, there are 2 candidate keys: userId and pId which uniquely identifies non-key attributes (userPassword, accessLevel) which satisfies BCNF) 
+ 
+**Notification** :  notificationId  ->  nMode, instructions, notificationTime, hId 
+
+**Meets** :  patientId, contactId ->  distance, startTime, endTime, maskWorn 
+
+**Has** :  pId, sId    (Super Key which validates BCNF) 
+
+**Symptom** : sId ->  sName, severity 
+
+**IsProvided** :  pId, servicId    (Super Key which validates BCNF) 
+
+**Service** : serviceId -> serviceType 
+
+**Views** :  userId, pId     (Super Key which validates BCNF) 
+
+**FollowUp** : followUpId ->  followUpDay, symptomCheck, temperatureInF, pId, hId 
+
+
+## 7. Create Table Statements
+
+**Database Name: practicumv01**
+
+CREATE DATABASE practicumv01;
+USE practicumv01;
+
+**Table Name: Person**
+
+ CREATE TABLE Person( pId INT AUTO_INCREMENT, pFirstName VARCHAR(30) NOT NULL, pLastName VARCHAR(30) NOT    NULL ,email VARCHAR(100) UNIQUE NOT NULL, gender ENUM('M','F','O'), age INT NOT NULL CHECK (age >= 0 AND   age<=110),
+ phoneNumber BIGINT UNIQUE NOT NULL CHECK(phoneNumber BETWEEN 1000000000 AND 9999999999), addressId INT NOT  NULL,
+ FOREIGN KEY(addressId) REFERENCES Location(addressId) ON UPDATE CASCADE, 
+ PRIMARY KEY(pId));
+
+**Table Name: Location**
+
+ CREATE TABLE Location( addressId INT AUTO_INCREMENT, blockNumber VARCHAR(30) NOT NULL,
+ street VARCHAR(50) NOT NULL, zipCode INT NOT NULL,
+ FOREIGN KEY(zipCode) REFERENCES Zip(zipCode) ON UPDATE CASCADE , 
+ PRIMARY KEY(addressId));
+ 
+ **Table Name: Zip**
+
+ CREATE TABLE Zip( zipCode INT CHECK(LENGTH(zipCode) = 5), city VARCHAR(30) NOT NULL,
+ state VARCHAR(30) NOT NULL, PRIMARY KEY(zipCode)); 
+ 
+ **Table Name: HealthInvestigator**
+ 
+ CREATE TABLE HealthInvestigator( pId INT , hOrganization VARCHAR(30) NOT NULL,
+ qualification VARCHAR(30) NOT NULL, roleName VARCHAR(30) NOT NULL, 
+ FOREIGN KEY (pId) REFERENCES Person(pId) ON DELETE CASCADE ON UPDATE CASCADE,
+ PRIMARY KEY(pId) );
+ 
+ **Table Name: AppUser**
+
+ CREATE TABLE AppUser( pId INT , pLanguage VARCHAR(30) DEFAULT 'English',
+ loggingDate DATETIME NOT NULL, testResult ENUM('Positive','Negative','Not Tested'), 
+ FOREIGN KEY (pId) REFERENCES Person(pId) ON DELETE CASCADE ON UPDATE CASCADE,
+ PRIMARY KEY(pId));
+ 
+ **Table Name: Patient**
+ 
+ CREATE TABLE Patient( pid INT , healthReportValidated ENUM('Yes','No'),
+ typeOfTreatment VARCHAR(100), recovered ENUM('Yes','No'),  
+ FOREIGN KEY (pId) REFERENCES AppUser(pId) ON DELETE CASCADE ON UPDATE CASCADE, 
+ PRIMARY KEY(pId));
+ 
+ **Table Name: Contact**
+ 
+ CREATE TABLE Contact( pid INT , notificationId INT,
+ FOREIGN KEY (pId) REFERENCES AppUser(pId) ON DELETE CASCADE ON UPDATE CASCADE,
+ FOREIGN KEY (notificationId) REFERENCES Notification(notificationId) ON UPDATE CASCADE ON DELETE SET NULL,
+ PRIMARY KEY(pId));
+ 
+ **Table Name: AuthorisedUser**
+ 
+ CREATE TABLE  AuthorisedUser( userId INT, userPassword VARCHAR(20) NOT NULL,
+ accessLevel ENUM('1','2','3'), pId INT UNIQUE NOT NULL,
+ FOREIGN KEY (pId) REFERENCES HealthInvestigator(pId) ON UPDATE CASCADE ON DELETE CASCADE, 
+ PRIMARY KEY(userId));
+ 
+ **Table Name: Notification**
+ 
+ CREATE TABLE Notification ( notificationId INT, nMode ENUM('Text','Voice Message','Email','Call'),
+ instructions VARCHAR(500) NOT NULL, notificationTime DATETIME NOT NULL, hId INT NOT NULL,
+ FOREIGN KEY (hId) REFERENCES HealthInvestigator(pId) ON UPDATE CASCADE,
+ PRIMARY KEY(notificationId));
+ 
+ **Table Name: Meets**
+ 
+ CREATE TABLE  Meets( patientId INT NOT NULL, contactId INT NOT NULL,
+ distance INT NOT NULL, startTime TIME NOT NULL, endTime TIME NOT NULL, maskWorn ENUM('P','C','PC','No'),
+ FOREIGN KEY (patientId) REFERENCES Patient(pId) ON DELETE CASCADE ON UPDATE CASCADE,
+ FOREIGN KEY (contactId) REFERENCES Contact(pId) ON DELETE CASCADE ON UPDATE CASCADE, 
+ PRIMARY KEY(patientId,contactId));
+ 
+ **Table Name: Has**
+
+ CREATE TABLE Has( pId INT NOT NULL, sId INT NOT NULL,
+ FOREIGN KEY (pId) REFERENCES AppUser(pId) ON DELETE CASCADE ON UPDATE CASCADE,
+ FOREIGN KEY (sId) REFERENCES Symptom(sId) ON DELETE CASCADE ON UPDATE CASCADE, 
+ PRIMARY KEY(pId,sId));
+ 
+ **Table Name: Symptom**
+ 
+ CREATE TABLE Symptom( sId INT, sName VARCHAR(30) NOT NULL, severity ENUM('Mild','Moderate','Severe'),
+ primary key(sId));
+ 
+ **Table Name: IsProvided**
+ 
+ CREATE TABLE IsProvided( pId INT NOT NULL, serviceId INT NOT NULL,
+ FOREIGN KEY (pId) REFERENCES AppUser(pId) ON DELETE CASCADE ON UPDATE CASCADE,
+ FOREIGN KEY (serviceId) REFERENCES Service(serviceId) ON DELETE CASCADE ON UPDATE CASCADE,
+ primary key(pId,serviceId));
+ 
+ **Table Name: Service**
+ 
+ CREATE TABLE Service( serviceId INT, serviceType ENUM('Shelter','Medicine','Food') UNIQUE, primary         key(serviceId)); 
+ 
+ **Table Name: Views**
+ 
+ CREATE TABLE Views( userId INT NOT NULL , pId INT NOT NULL,
+ FOREIGN KEY (userId) REFERENCES AuthorisedUser(userId) ON DELETE CASCADE ON UPDATE CASCADE,
+ FOREIGN KEY (pId) REFERENCES AppUser(pId) ON DELETE CASCADE ON UPDATE CASCADE,
+ PRIMARY KEY(userId,pId));
+ 
+ **Table Name: FollowUp**
+ 
+ CREATE TABLE FollowUp( followUpId INT, followUpDay ENUM("1","2","3","4","5","6","7","8","9","10","11","12","13","14") ,
+ symptomCheck ENUM('Improved','Same','Worsened'), temperatureInF INT NOT NULL, 
+ pId INT NOT NULL , hId INT NOT NULL,
+ FOREIGN KEY (pId) REFERENCES AppUser(pId) ON DELETE CASCADE ON UPDATE CASCADE,
+ FOREIGN KEY (hId) REFERENCES HealthInvestigator(pId) ON DELETE CASCADE ON UPDATE CASCADE,
+ PRIMARY KEY(followUpId));
+
+## 8. Proof
+
+The images below describe how some tables conform to the constraints along with all the create table outputs and one sample query.
+
+![Fig 8.1: Phone number Constraint- Allows only 10 digits](D:/NEU/5200 DBMS/Practicum1/phoneCheck.png)
+
+<br>
+
+![Fig 8.2: Zip Code Constraint- Allows only 5 digits, NOT NULL constraint doesn't permit NULL values](D:/NEU/5200 DBMS/Practicum1/zipCodeCheck.png)
+
+<br>
+
+![Fig 8.3: All the created tables are reflected here](D:/NEU/5200 DBMS/Practicum1/SchemaCreation.png)
+
+<br>
+
+![Fig 8.4: One sample query is illustrated here](D:/NEU/5200 DBMS/Practicum1/sampleQuery.png)
+
+<br>
+
+![Fig 8.5: Referential Integrity is maintained by our model <br> Error Code: 1452. Cannot add or update a child row: a foreign key constraint fails (`practicumv01`.`has`, CONSTRAINT `has_ibfk_2` FOREIGN KEY (`sId`) REFERENCES `symptom` (`sId`) ON DELETE CASCADE ON UPDATE CASCADE)	0.000 sec](D:/NEU/5200 DBMS/Practicum1/ReferentialIntegrity.png)
+
+
+## 9. Queries
+
+**Query to show the gender, roleName and street of AuthorizedUser who lives at a street name that includes "av"** 
+
+**Multiple Joins**
+
+SELECT gender, roleName, street
+FROM Person p
+JOIN HealthInvestigator h ON p.pId = h.pId
+JOIN AuthorisedUser au ON h.pId = au.pId
+JOIN Location l ON l.addressId = p.addressId
+WHERE l.street LIKE '%av%';
+
+**Query to show some details of the health investigator who has notified the contacts by call and having authorization level 1**
+
+**SubQuery**
+
+SELECT  h.pId, p.age, p.gender  
+FROM healthinvestigator h, notification n, Person p
+WHERE p.pId = h.pId AND n.nMode = 'Call' AND n.hId = (
+SELECT h.pId FROM authoriseduser AS a
+WHERE a.accesslevel = '1' and a.pId = h.pId);
+
+**Query to fetch the services used by more than 3 app users and number of app users using it**
+
+**Group By Query**
+
+SELECT service.serviceType, count(*) serviceCount FROM appuser,isprovided,service
+WHERE appuser.pId = isprovided.pId AND isprovided.serviceId = service.serviceId
+GROUP BY service.serviceType 
+HAVING serviceCount > 3;
+
+**Query to fetch person details who are having mild symptoms and stay at street having 'st' and state having 'paulo' in their names**
+
+**Complex Search Criterion**
+
+SELECT DISTINCT a.pId, CONCAT(p.pFirstName, " ", p.pLastName) as Name , l.street, z.state
+FROM AppUser a 
+JOIN Person p 
+ON a.pId = p.pId  
+JOIN Has h 
+ON a.pId = h.pId 
+JOIN Symptom s 
+ON h.sId = s.sId 
+JOIN Location l 
+ON p.addressId = l.addressId 
+JOIN Zip z 
+ON l.zipCode = z.zipCode 
+WHERE s.severity = 'Mild' AND l.street LIKE '%st%' AND z.state LIKE '%paulo%'; 
+
+
+**Query to fetch number of authorised users for a particular access level and categorizing the count as 'Most Count', 'Moderate Count' and 'Lowest Count'**
+
+**CTE with SELECT CASE Query**
+
+WITH cte AS (    
+ SELECT
+        accessLevel,
+COUNT(*) AS AuthorisedUserCount   
+  FROM  
+AuthorisedUser a  
+JOIN HealthInvestigator h    
+ON a.pId = h.pId  
+JOIN Person p   
+ON h.pId = p.pId  
+GROUP BY accessLevel   
+)
+SELECT  
+accessLevel,    
+AuthorisedUserCount,   
+CASE  
+  WHEN AuthorisedUserCount = 7 THEN 'Most Count'   
+  WHEN AuthorisedUserCount BETWEEN 5 AND 7 THEN 'Moderate Count'   
+  ELSE 'Lowest Count'  
+  END AccessLevelCount  
+FROM cte  
+ORDER BY accessLevel; 
+
+## 10. Connection to DB and execution of the queries
+
+```{r}
+# INSTALL AND LOAD PACKAGES ################################
+
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(pacman, rio, tidyverse)
+if (!require("RMySQL")) install.packages("RMySQL")
+library(RMySQL)
+
+localuserpassword <- "Test#123"
+
+# ESTABLISH A DB CONNECTION ################################
+
+practicum <- dbConnect(RMySQL::MySQL(), user='smriti', password=localuserpassword, dbname='practicumv01', host='localhost')
+
+ dbListTables(practicum)
+```
+
+
+```{r}
+# DECLARE QUERY 1 ################################
+
+sqlq1 <- "SELECT gender, roleName, street
+FROM Person p
+JOIN HealthInvestigator h ON p.pId = h.pId
+JOIN AuthorisedUser au ON h.pId = au.pId
+JOIN Location l ON l.addressId = p.addressId
+WHERE l.street LIKE '%av%';"
+
+# GET QUERY RESULT AFTER EXECUTION ################################
+
+df1 <- dbGetQuery(practicum, sqlq1)
+
+df1
+
+```
+
+
+```{r}
+# DECLARE QUERY 2 ################################
+
+sqlq2 <- "SELECT  h.pId, p.age, p.gender  
+FROM healthinvestigator h, notification n, Person p
+WHERE p.pId = h.pId AND n.nMode = 'Call' AND n.hId = (
+SELECT h.pId FROM authoriseduser AS a
+WHERE a.accesslevel = '1' and a.pId = h.pId);"
+
+# GET QUERY RESULT AFTER EXECUTION ################################
+
+df2 <- dbGetQuery(practicum, sqlq2)
+
+df2
+
+```
+
+
+```{r}
+# DECLARE QUERY 3 ################################
+
+sqlq3 <- "SELECT service.serviceType, count(*) serviceCount FROM appuser,isprovided,service
+WHERE appuser.pId = isprovided.pId AND isprovided.serviceId = service.serviceId
+GROUP BY service.serviceType 
+HAVING serviceCount > 3;"
+
+# GET QUERY RESULT AFTER EXECUTION ################################
+
+df3 <- dbGetQuery(practicum, sqlq3)
+
+df3
+
+```
+
+
+```{r}
+
+# DECLARE QUERY 4 ################################
+
+sqlq4 <- "SELECT DISTINCT a.pId, CONCAT(p.pFirstName, ' ' , p.pLastName) as Name , l.street, z.state
+FROM AppUser a 
+JOIN Person p 
+ON a.pId = p.pId  
+JOIN Has h 
+ON a.pId = h.pId 
+JOIN Symptom s 
+ON h.sId = s.sId 
+JOIN Location l 
+ON p.addressId = l.addressId 
+JOIN Zip z 
+ON l.zipCode = z.zipCode 
+WHERE s.severity = 'Mild' AND l.street LIKE '%st%' AND z.state LIKE '%paulo%'; "
+
+# GET QUERY RESULT AFTER EXECUTION ################################
+
+df4 <- dbGetQuery(practicum, sqlq4)
+
+df4
+
+```
+
+
+```{r}
+# DECLARE QUERY 5 ################################
+
+sqlq5 <- "WITH cte AS (    
+ SELECT
+        accessLevel,
+COUNT(*) AS AuthorisedUserCount   
+  FROM  
+AuthorisedUser a  
+JOIN HealthInvestigator h    
+ON a.pId = h.pId  
+JOIN Person p   
+ON h.pId = p.pId  
+GROUP BY accessLevel   
+)
+SELECT  
+accessLevel,    
+AuthorisedUserCount,   
+CASE  
+  WHEN AuthorisedUserCount = 7 THEN 'Most Count'   
+  WHEN AuthorisedUserCount BETWEEN 5 AND 7 THEN 'Moderate Count'   
+  ELSE 'Lowest Count'  
+  END AccessLevelCount  
+FROM cte  
+ORDER BY accessLevel; "
+
+# GET QUERY RESULT AFTER EXECUTION ################################
+
+df5 <- dbGetQuery(practicum, sqlq5)
+
+df5
+
+# DISCONNECT DB ################################
+dbDisconnect(practicum)
+
+```
+
+
+```{r}
+# Plotting Query 3 using bar chart
+barplot(as.integer(df3$serviceCount),names.arg = (df3$serviceType),
+        ylab   = "Service Count",  # Flip axis labels
+        xlab   = "Service Type",
+        border = NA,  # No borders on bars
+        ylim = c(0,50),
+        col    = "#CD0000"  # red3
+        )
+# CLEAN UP #################################################
+
+# Clear environment
+rm(list = ls()) 
+
+# Clear packages
+p_unload(all)  # Remove all add-ons
+
+# Clear plots
+dev.off()  # But only if there IS a plot
+
+# Clear console
+cat("\014")  # ctrl+L
+
+# Clear mind :)
+
+```
+
+
+
+

@@ -1,0 +1,1233 @@
+---
+title: "Digital Contact Tracing Business Logic"
+output:
+  html_document:
+    df_print: paged
+---
+
+### Author: Group 16
+#### Names: Rachana Anil, Smriti Bajaj, Urvin Desai
+
+## Introduction
+
+Digital Contact Tracing Business Logic is a continuation of the proposed methodology which is based on Case investigation and contact tracing, a core disease control measure employed by local and state health department personnel for decades. It is a key strategy for preventing further spread of COVID-19.
+
+We have employed keeping in mind both the manual efforts required to keep track of patient’s records also known as case management, and proximity tracing which is purely a technical approach. Technology can support case investigation and contact tracing but cannot take the place of a trained public health workforce for interviewing, counseling, and providing support for those impacted by COVID-19.
+
+This document focuses on various database operations, objects, features, constraint handling and query analysis and optimization plans.
+
+```{r}
+# INSTALL AND LOAD PACKAGES ################################
+
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(pacman, rio, tidyverse)
+if (!require("RMySQL")) install.packages("RMySQL")
+library(RMySQL)
+
+localuserpassword <- "Test#123"
+
+# ESTABLISH A DB CONNECTION ################################
+
+practicum <- dbConnect(RMySQL::MySQL(), user='smriti', password=localuserpassword, dbname='practicumv01', host='localhost')
+
+ dbListTables(practicum)
+```
+
+## 1. Creation of a view to help abstract a complex query
+
+In SQL, a "view" is a virtual table. It lets you package a complex query into a single table and simplify reporting. This helps maintain the security in a DBMS as we are giving permission to a view instead of tables containing sensitive data.
+This view is created by joining tables patient, person, has, symptom. It shows the various symptoms possessed by patients. 
+
+```{r}
+
+## storing the query in a variable
+viewquery <- "CREATE VIEW patientAndSyptoms AS
+SELECT patient.pid,person.pFirstName, person.pLastName, person.age, symptom.sName as Symptoms FROM patient,person,symptom
+WHERE patient.pId = person.pId and patient.pid IN (
+SELECT has.pId FROM has
+WHERE has.sId = symptom.sId)
+GROUP BY patient.pid"
+
+df2 <- dbGetQuery(practicum,viewquery)
+
+
+## Print the created view
+df2 <- dbGetQuery(practicum,"SELECT * from patientAndSyptoms;")
+df2
+
+```
+## 2. Query performed on the created view
+
+Views hide the complexity and helps in accessing the records in a simpler way. If we have any frequently used complex query, we can create a view based on it so that we can reference to the view by using a simple SELECT statement instead of typing the query all over again.This saves us from the trouble of unwanted modification of the data that can happen in a table.
+
+Using the above created view we can perform complicated operations using simple queries. Here the view is used to fetch the number of patients with 'fever' and their average age.
+
+```{r}
+## storing the query in a variable
+viewquery <- "SELECT symptoms,COUNT(*) as NumberOfPatients, AVG(age) as AvgAge FROM patientAndSyptoms 
+WHERE symptoms = 'Fever'
+GROUP BY symptoms;"
+df2 <- dbGetQuery(practicum,viewquery)
+df2
+
+## drop the view
+df2 <- dbGetQuery(practicum,"DROP VIEW patientAndSyptoms;")
+
+```
+
+## 3. Implement CRUD operations for one data object 
+
+CRUD is an acronym for Create, Read, Update, and Delete. CRUD operations are basic data manipulation operations for the database.
+Each specific operation of CRUD has been implemented as a separate R function.
+The operations will be performed on Zip table. For example, there is a separate
+function for CREATE, READ, UPDATE and DELETE operations.The arguments will be passed via corresponding function calls and as the values of the corresponding attributes of Zip table.
+<br>
+
+CREATE -> It's basically the INSERT operation performed on a table.
+<br>
+READ   -> READ operation refers to the SELECT statement which is used to view records of a table.
+<br>
+UPDATE -> UPDATE operation refers to the UPDATE statement which is used to update            the values of one or more attributes of a table.
+<br>
+DELETE -> DELETE operation refers to the DELETE statement which is used to delete            one or more rows from a table.
+
+
+
+**NOTE** - For each CRUD operation, arguments are passed as attribute values to the functions. We can even pass the argument as lists, vectors, dataframes etc, but as in this case the number of arguments are very few, we have not implemented that.
+
+
+CREATE Operation to insert values in Zip table by passing the attribute values to the function addNewZip. Here, we have also included trycatch for exception handling so, if duplicate values are passed for the primary key or any invalid value is being inserted then the errors will be handled accordingly and an appropriate error message will be displayed.
+
+```{r}
+
+# addNewZip function
+
+addNewZip <- function(z,c,s) {
+tryCatch(
+     
+expr = {
+
+sqlq8 <- paste0("INSERT INTO Zip(zipCode, city, state)
+                 VALUES(",z,", ","'", c,"'",", ","'", s,"'", ");")
+
+dbGetQuery(practicum, sqlq8)
+  
+print("Data Inserted")
+
+sqlq01 <- paste0("SELECT * FROM Zip WHERE zipCode=", z)
+  
+dbGetQuery(practicum, sqlq01)
+
+},
+
+error = function(e){print(paste(" INSERT operation Error:", e))
+  }
+)
+}
+
+# Function Call to addNewZip function with argument (10111, 'Noida' , 'UP').
+# Here, 10111 is the zipCode, 'Noida' is the city and 'UP' is the state which are being added.
+
+
+addNewZip(10111, 'Noida' , 'UP')
+
+
+```
+
+
+READ Operation on Zip table for a particular zipCode which is passed as an argument by function call to viewZip function.
+
+
+```{r}
+# viewZip function
+
+viewZip <- function(zid) {
+  
+tryCatch(
+  
+expr={sqlq9 <- paste0("SELECT * FROM Zip WHERE zipCode =", zid)                      
+              
+print("Data Viewed")
+  
+dbGetQuery(practicum, sqlq9)
+
+},
+error=function(e){
+  print(paste(" Read operation Error:", e))
+}
+)
+
+}
+# Function Call to viewZip function with argument 10111 to view the particular record 
+
+viewZip(10111)
+
+
+```
+
+<br>
+**The database state to show the before image prior to the UPDATE operation for a particular zipCode from Zip table which will be passed as an argument in the next step**
+
+
+```{r}
+
+dbGetQuery(practicum, paste0("SELECT * FROM Zip WHERE zipCode=", 10111))
+
+```
+
+UPDATE Operation on Zip table for a particular zipCode which is passed as an argument by function call to updateZip function. Here, the new values of attribute city and state are passed as arguments in c and s variables respectively.
+
+```{r}
+
+# updateZip function
+
+updateZip <- function(zid,c,s) {
+  
+tryCatch(
+  
+expr={
+  
+sqlq10 <- paste0(" UPDATE Zip
+                   SET city =", "'", c,"'",",", "state =","'", s,"'","WHERE  zipCode =", zid)                      
+              
+dbGetQuery(practicum, sqlq10)
+
+print("Data Updated")
+
+sqlq02 <- paste0("SELECT * FROM Zip WHERE zipCode=", zid)
+
+dbGetQuery(practicum, sqlq02)
+},
+error=function(e){
+  print(paste(" Update operation Error:", e))
+}
+)
+}
+
+
+# Function Call to updateZip function with argument 10111 which is the zipCode and 'Santa Maria' and 'Mexico' which are the new values for city and state attributes respectively in the Zip table which are being updated
+
+updateZip(10111, 'Santa Maria', 'Mexico')
+
+
+```
+
+<br>
+**The database state to show the before image prior to the DELETE operation for a particular zipCode from Zip table which will be passed as an argument in the next step**
+
+
+```{r}
+
+dbGetQuery(practicum,paste0("SELECT * FROM Zip WHERE zipCode =", 10111) )
+
+
+```
+
+
+DELETE Operation on Zip table for a particular zipCode which is passed as an argument by function call to removeZip function. Additionally, the SELECT statement has been included in the function which shows that the record with the zipCode which was passed as an argument is not present in the table. So, the output of the SELECT statement will have no rows present
+
+
+```{r}
+
+# removeZip function
+
+
+removeZip <- function(zid) {
+  
+tryCatch(
+  
+expr={
+  
+sqlq11 <- paste0(" DELETE FROM Zip WHERE zipCode =", zid )                      
+              
+dbGetQuery(practicum, sqlq11)
+ 
+print("Data Deleted")
+
+dbGetQuery(practicum,paste0(" SELECT * FROM Zip WHERE zipCode =", zid ) )   
+},
+error=function(e){
+  print(paste(" Delete operation Error:", e))
+}
+)
+}
+
+
+# Function Call to removeZip function with argument 10111 which is the zipCode for which the record will be deleted
+
+removeZip(10111)
+
+```
+
+## 4.	Trigger to manage data integrity- multiplicity constraint(1 or more)
+
+This trigger is needed because while entering data into Contact table, the contact must be present in Meets table as no contact can exist without meeting the patient.
+
+So, if we try to add data in Meets table, it will throw a referential integrity error saying "Contact ID doesn't exist".
+
+```{r}
+
+tryCatch(
+  expr={
+    insQuery1<-dbGetQuery(practicum, "INSERT INTO Meets VALUES(23,21,4,'16:22:47','17:58:24','PC') ")
+  print("Successfully inserted in Meets")
+
+  },
+  error=function(e){
+    print(paste("Error while inserting in Meets: ",e))
+  }
+)
+
+```
+
+
+<br>
+But, before creating the trigger, we are able to enter the data into Contact table which violates the multiplicity constraint(1 or more) as the entered contact has not yet met the patient and hence, it should not be a Contact.
+
+**Before creating the trigger**
+
+```{r}
+
+tryCatch(
+  expr={insQuery2<-dbGetQuery(practicum, "INSERT INTO Contact VALUES (21, 51)")
+  print("Successfully inserted in Contact")
+
+  },
+  error=function(e){
+    print(paste("Error while inserting in Contact: ",e))
+  }
+)
+
+```
+**Creation of Trigger**
+
+```{r}
+dropInsTrigContact<-"DROP TRIGGER if exists insertTriggerContact;"
+
+tryCatch(
+  expr={
+    dbGetQuery(practicum, dropInsTrigContact)
+    print("Successfully dropped the trigger")
+  },
+  error=function(e){
+    print(paste("Error while dropping the trigger: ",e))
+  }
+)
+
+
+createInsTrigContact<-"
+CREATE TRIGGER insertTriggerContact 
+BEFORE INSERT 
+ON Contact FOR EACH ROW
+BEGIN 
+DECLARE
+msg  varchar(50);
+SET @val = (SELECT count(*) FROM Meets WHERE contactId = NEW.pId);
+    
+IF @val=0 THEN
+   SET msg = 'Incorrect: Every contact must meet the patient';
+   SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = msg; 
+END IF;
+END;"
+
+tryCatch(
+  expr={
+    dbGetQuery(practicum, createInsTrigContact)
+    print("Successfully created the trigger")
+  },
+  error=function(e){
+    print(paste("Error while creating the trigger: ",e))
+  }
+)
+
+```
+
+
+**After creating the trigger**
+
+If we will try to insert a Contact, now, without it's log in the Meets table, it will throw an error because a contact cannot exist without meeting the patient.
+
+```{r}
+
+tryCatch(
+  expr={insQuery3<-dbGetQuery(practicum, "INSERT INTO Contact VALUES (28, 52)")
+  print("Successfully inserted in Contact")
+
+  },
+  error=function(e){
+    print(paste("Error while inserting in Contact: ",e))
+  }
+)
+
+```
+
+**Transaction processing for multiplicity constraint**
+
+To solve this, we must use Transaction processing as it ensures serial execution of the statements or statements where circular dependency is present before commit takes place.
+
+    #1. start a new transaction
+    START TRANSACTION;
+    #2. turn off the constraints/triggers
+    SET @@FOREIGN_KEY_CHECKS=0;
+    DROP TRIGGER if exists insertTriggerContact;
+    #3. insert a new contact for appUser Id 30
+    INSERT INTO Contact VALUES (30, 1);
+    #4. map the contact to infected patient
+    INSERT INTO Meets VALUES (46, 30, 4, '13:41:15','14:41:15', 'No' );
+    #5. turn on the constraints/triggers
+	  SET @@FOREIGN_KEY_CHECKS=1;
+	  DELIMITER //
+	  CREATE TRIGGER insertTriggerContact
+	  BEFORE INSERT 
+    ON Contact FOR EACH ROW
+    BEGIN 
+    DECLARE
+    msg  varchar(50);
+    SET @val = (SELECT count(*) FROM Meets WHERE contactId = NEW.pId);
+    
+      IF @val=0 THEN
+         SET msg = 'Incorrect: Every contact must meet the patient';
+         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = msg; 
+      END IF;
+    END;
+    #6.Commit changes
+    COMMIT;
+
+After successful execution on the above transaction, the multiplicity constraint will hold true and following output can be observed-
+
+```{r}
+tryCatch(
+  expr={selQuery1<-"SELECT * FROM Contact WHERE pId=30"
+    result<-dbGetQuery(practicum, selQuery1)
+    result
+  },
+error=function(e){
+    print(paste("Error in select query1: ",e))
+}
+)
+
+tryCatch(
+  expr={selQuery2<-"SELECT * FROM Meets WHERE contactId=30"
+    result<-dbGetQuery(practicum, selQuery2)
+    result
+  },
+error=function(e){
+    print(paste("Error in select query2: ",e))
+}
+)
+```
+
+
+
+
+
+## 5.	Trigger to keep derived atrribute updated
+
+We have a contact table for which we are adding a derived attribute using ALTER TABLE statement for riskScore. 
+
+```{r}
+sqlAlter1<-"ALTER TABLE Contact 
+ADD COLUMN riskScore ENUM('High','Moderate','Low')"
+
+tryCatch(
+  expr={altQuery1<-dbSendQuery(practicum, sqlAlter1)
+  print("Successfully added the column")
+
+  },
+  error=function(e){
+    print(paste("Error occurred during column addition: ",e))
+  }
+)
+```
+
+**riskScore** will have values as "High" or "Moderate" or "Low" depending on how many patients the contact has met, whether they were wearing the mask or not during the time of contact and the distance between them. **insertTriggerMeets** tracks the riskScore after insert is performed on Meets as it stores **patientId, contactId, distance, startTime, endTime, maskWorn** attributes.
+
+
+```{r}
+dropInsTrigMeets<-"DROP TRIGGER if exists insertTriggerMeets;"
+
+tryCatch(
+  expr={
+    dbGetQuery(practicum, dropInsTrigMeets)
+    print("Successfully dropped the trigger")
+  },
+  error=function(e){
+    print(paste("Error while dropping the trigger: ",e))
+  }
+)
+
+createInsTrigMeets<-"
+CREATE TRIGGER insertTriggerMeets 
+AFTER INSERT ON Meets FOR EACH ROW
+BEGIN 
+DECLARE msg varchar(50);
+SET @cnt = (SELECT count(*) FROM Meets GROUP BY contactId HAVING contactId = NEW.contactId );
+IF (@cnt>1 AND NEW.maskWorn='No' AND NEW.distance<3 ) THEN
+UPDATE Contact
+SET riskScore='High'
+WHERE pId= NEW.contactId;
+ELSEIF ((NEW.maskWorn='C' OR NEW.maskWorn='No')  AND NEW.distance<5 ) THEN
+UPDATE Contact
+SET riskScore='Moderate'
+WHERE pId= NEW.contactId;
+ELSE
+UPDATE Contact
+SET riskScore='Low'
+WHERE pId= NEW.contactId;
+END IF;
+END;
+"
+
+tryCatch(
+  expr={
+    dbGetQuery(practicum, createInsTrigMeets)
+    print("Successfully created the trigger")
+  },
+  error=function(e){
+    print(paste("Error while creating the trigger: ",e))
+  }
+)
+
+```
+
+Following queries will insert the contactIds who have met the patient at specified start and end times, were wearing the masks or not and the distance maintained between the contact and the patient. Based on these values, riskScore will be calculated for Contact table.
+
+```{r}
+tryCatch(
+  expr={insQuery4<-"INSERT INTO Meets VALUES (50, 99, 4,'13:09:34','14:26:09','No'),
+  (50, 97, 2,'12:09:34','14:26:09','No'),(49, 98, 5,'02:09:34','04:26:09','P')"
+    dbGetQuery(practicum, insQuery4)
+    print("Successfully inserted into Meets")
+  },
+error=function(e){
+    print(paste("Error while inserting into Meets: ",e))
+}
+)
+
+tryCatch(
+  expr={selQuery1<-"SELECT * FROM Contact WHERE pId IN (99,98,97)"
+    result<-dbGetQuery(practicum, selQuery1)
+    result
+  },
+error=function(e){
+    print(paste("Error in select query: ",e))
+}
+)
+
+```
+
+
+
+## 6. Stored Procedure
+A stored procedure is a prepared SQL code that one can save, so the code can be reused over and over again. So if we have an SQL query that you write over and over again, we can save it as a stored procedure, and then just call to execute it.
+
+We can also pass parameters to a stored procedure so that the stored procedure can act based on the parameter value that is passed.
+
+Here the stored procedure is created to update the address of a person.Based on the criteria of update, the tables that will be updated are location, zip and person.
+
+
+```{r}
+# Stored Procedure Creation ################################
+
+### drop the procedure created
+dbGetQuery(practicum, "DROP PROCEDURE IF EXISTS updateAddress;")
+
+sql1 <- "
+CREATE PROCEDURE updateAddress(IN identifer INT, IN streetName VARCHAR(50),
+IN blockName VARCHAR(30),IN cityName VARCHAR(30),IN stateName VARCHAR(30),IN zipNumber INT)
+BEGIN
+
+/*If zipcode doen't exist add zipcode*/
+	IF (zipNumber NOT IN (SELECT zipCode FROM zip)) THEN
+	BEGIN
+		INSERT INTO zip VALUES(zipNumber,cityName,stateName);
+	END;
+    END IF;
+    
+/* Counting how many people share the address */ 
+
+set @oldAddrId := (SELECT person.addressId FROM person
+            WHERE person.pId = identifer);
+set @oldZip := (SELECT zipCode FROM location 
+			WHERE location.addressId = @oldAddrId);
+set @oldZipCount := (SELECT COUNT(*) FROM location
+            WHERE location.zipCode = @oldZip
+            GROUP BY location.zipCode);
+set	@k := (SELECT COUNT(*)
+    FROM person 
+    WHERE person.addressId = @oldAddrId 
+    GROUP BY person.addressId);
+    
+    /*If only 1 person at location update existing location*/
+    
+    IF @k=1 then
+		
+		/*Check if new location already exists*/
+		
+		IF EXISTS (SELECT * FROM location
+		WHERE location.street = streetName AND location.blockNumber = blockName AND
+		location.zipCode = zipNumber) then
+        BEGIN
+        
+			/*address id is updated to existing address*/
+			
+            set @oldAddrId := (SELECT person.addressId FROM person
+            WHERE person.pId = identifer);
+			UPDATE person
+			SET person.addressId = 
+			(SELECT location.addressId FROM location
+			WHERE location.street = streetName AND location.blockNumber = blockName AND
+			location.zipCode = zipNumber)
+            WHERE person.pId = identifer;
+            
+		/*after update delete the old addr as it's not needed. No other people use it*/
+		
+            DELETE FROM location
+            WHERE location.addressId = @oldAddrId;
+		END;
+        ELSE
+        
+        /* If new updated address doesn't already exist*/
+        
+        BEGIN
+        
+        /*New location is updated in same address*/
+        
+		UPDATE location
+		SET location.street = streetName, location.blockNumber = blockName,
+		location.zipCode = zipNumber
+		where location.addressId = (
+		SELECT person.addressId FROM person WHERE person.pId = identifer);
+		END;
+        END IF;
+        
+    /* Delete old zip if not used*/
+    
+        IF @oldZipCount = 1 then
+        DELETE FROM zip 
+        WHERE zipCode = @oldZip;
+        END IF;
+        
+    /*If more than 1 person at location create new location*/
+    
+    ELSE
+    BEGIN
+    
+		/*Check if new location already exists*/
+		
+		IF EXISTS (SELECT * FROM location
+		WHERE location.street = streetName AND location.blockNumber = blockName AND
+		location.zipCode = zipNumber) then
+        BEGIN
+        
+			/*address id is updated to existing address*/
+			
+			UPDATE person
+			SET person.addressId = 
+			(SELECT location.addressId FROM location
+			WHERE location.street = streetName AND location.blockNumber = blockName AND
+			location.zipCode = zipNumber)
+            WHERE person.pId = identifer;
+            /*No delete of location needed as used by other people*/
+		END;
+        ELSE
+        BEGIN
+        
+        /* new address added*/
+        
+		INSERT INTO location (blockNumber,street,zipCode) values (blockName, streetName, zipNumber);
+		UPDATE person SET person.addressId = (
+		SELECT location.addressId FROM location 
+		WHERE location.blockNumber = blockName AND location.street = streetName 
+		AND location.zipCode = zipNumber)
+		WHERE person.pId = identifer;
+		END;
+        END IF;
+    END;
+    END IF; 
+END;
+"
+
+# GET QUERY RESULT AFTER EXECUTION ################################
+
+tryCatch(
+  expr={df1 <- dbGetQuery(practicum, sql1)
+  print("Successfully created the stored procedure")
+  },
+  error=function(e){
+      print(paste("Error while creating the stored procedure: ",e))
+  }
+)
+
+```
+
+Displaying the existing tables persons, location and zip. 
+
+```{r}
+## Display the person table contaning list off addresses. Total rows= 100
+df1 <- dbGetQuery(practicum, "SELECT pId, addressId FROM PERSON ORDER BY pId");
+df1
+
+## Display the location table contaning list off addresses. Total rows= 100 
+df1 <- dbGetQuery(practicum, "SELECT * FROM LOCATION");
+df1
+
+## Display the zip table contaning list off addresses. Total rows= 100 
+df1 <- dbGetQuery(practicum, "SELECT * FROM zip");
+df1
+```
+
+**Note: All the above tables have 100 rows**
+
+Update address of a person to an address which doesn't exist in the database. Here, the old address is not shared by anybody else.
+
+```{r}
+## calling the Stored procedure
+
+tryCatch(
+  df2 <- dbGetQuery(practicum, "call updateAddress(3,'16161 Ave','2113','Geoal','MA',31424)"),
+  error=function(e){
+      print(paste("Error while calling the stored procedure: ",e))
+  }
+)
+
+## Display existing table persons(pid = 3) after update. Total rows= 100 
+
+### The existing address is updated. Addressid = 4 is updated
+df2 <- dbGetQuery(practicum, "SELECT * FROM location");
+df2
+
+### No new address mapped. Old address is updated in database. Total rows= 100 
+
+df2 <- dbGetQuery(practicum, "SELECT pId, addressId FROM PERSON ORDER BY pId");
+df2
+
+### New row is added to zip. Old zip deleted  Total rows= 100 
+
+df2 <- dbGetQuery(practicum, "SELECT * FROM zip");
+df2
+```
+
+**Note: All the above tables have 100 rows**
+
+Update address of a person(pid = 4,6) to an address which  exists in the database. Here The old address of person is not shared by anybody else and hence deleted.
+
+```{r}
+
+## calling the Stored procedure
+
+tryCatch(
+  df3 <- dbGetQuery(practicum, "call updateAddress(4,'16161 Ave','2113','Geoal','MA',31424)"),
+  error=function(e){
+      print(paste("Error while calling the stored procedure: ",e))
+  }
+)
+
+tryCatch(
+df3 <- dbGetQuery(practicum, "call updateAddress(6,'16161 Ave','2113','Geoal','MA',31424)"),
+  error=function(e){
+      print(paste("Error while calling the stored procedure: ",e))
+  }
+)
+
+### A new address is not added as the new address already exists in the database. Total rows = 98
+df3 <- dbGetQuery(practicum, "SELECT * FROM location");
+df3
+
+### pId = 4,6 mapped to addressId = 4
+
+df3 <- dbGetQuery(practicum, "SELECT pId, addressId FROM PERSON ORDER BY pId");
+df3
+
+### No new row added to zip as the zipcode already exists. Old zip of 2 addresses deleted as not used  Total rows= 98 
+
+df3 <- dbGetQuery(practicum, "SELECT * FROM zip");
+df3
+
+```
+
+**Note: Location and Zip tables have 98 rows**
+
+Update address of a person(pid = 5) to an address which doesn't  exists in the database. Here The old address of person is shared by one or more people.
+
+```{r}
+## calling the Stored procedure
+tryCatch(
+df4 <- dbGetQuery(practicum, "call updateAddress(5,'12','2','NYC','NY',12345);"),
+  error=function(e){
+      print(paste("Error while calling the stored procedure: ",e))
+  }
+)
+
+### A new address is added. Max value of addressId is not 100. The old addressId of the person (addressId = 4) is not deleted as it is still referenced to other people 
+df4 <- dbGetQuery(practicum, "SELECT * FROM location");
+df4
+
+### New addressId is mapped to pId = 5 mapped to new addressId created.
+
+df4 <- dbGetQuery(practicum, "SELECT pId, addressId FROM PERSON ORDER BY pId");
+df4
+
+### New zip added.  Total rows= 99 
+
+df4 <- dbGetQuery(practicum, "SELECT * FROM zip");
+df4
+```
+
+**Note: Location and Zip tables have 99 rows**
+
+Update address of a person(pid = 4) to an address which   exists in the database. Here The old address of person(pid = 4) is shared by one or more people.
+
+```{r}
+## calling the Stored procedure
+tryCatch(
+df5 <- dbGetQuery(practicum, "call updateAddress(4,'12','2','NYC','NY',12345);"),
+  error=function(e){
+      print(paste("Error while calling the stored procedure: ",e))
+  }
+)
+
+### A new address is not added. Total rows = 99. The old addressId of the person (addressId = 4) is not deleted as it is still referenced to other people 
+df5 <- dbGetQuery(practicum, "SELECT * FROM location");
+df5
+
+###  addressId mapped to pId = 4 is changed to new addressId.
+
+df5 <- dbGetQuery(practicum, "SELECT pId, addressId FROM PERSON ORDER BY pId");
+df5
+
+### No new row added to zip as the zipcode already exists.  Total rows= 99 
+
+df5 <- dbGetQuery(practicum, "SELECT * FROM zip");
+df5
+
+### drop the procedure created
+df5 <- dbGetQuery(practicum, "DROP PROCEDURE updateAddress;")
+
+```
+
+**Note: Location and Zip tables have 99 rows**
+
+## 7. Add transaction logic to support CRUD operations that span multiple tables
+
+A transaction is a sequential group of database manipulation operations, which is performed as if it were one single work unit. In other words, a transaction will never be complete unless each individual operation within the group is successful. If any operation within the transaction fails, the entire transaction will fail.
+
+Practically, we will club many SQL queries into a group and we will execute all of them together as a part of a transaction.
+
+
+**Properties of Transactions**
+
+Transactions have the following four standard properties, usually referred to by the acronym ACID −
+
+Atomicity − This ensures that all operations within the work unit are completed successfully; otherwise, the transaction is aborted at the point of failure and previous operations are rolled back to their former state.
+
+Consistency − This ensures that the database properly changes states upon a successfully committed transaction.
+
+Isolation − This enables transactions to operate independently and transparently.
+
+Durability − This ensures that the result or effect of a committed transaction persists in case of a system failure.
+
+
+**COMMIT and ROLLBACK**
+
+These two keywords Commit and Rollback are mainly used for MySQL Transactions.
+
+When a successful transaction is completed, the COMMIT command should be issued so that the changes to all involved tables will be written to the disk.
+
+If a failure occurs, a ROLLBACK command should be issued to return every table referenced in the transaction to its previous state.
+
+--------------------------------------------------------------------------------------------
+
+Here, 4 functions have been created. Each function has a transaction logic for specific CRUD operation that spans multiple tables.For example, a particular function will only have 1 transaction logic for CREATE operation and another function will only have 1 transaction logic for UPDATE operation.
+
+
+**NOTE** - For each CRUD operation, arguments are passed as attribute values to the functions. Arguments are passed as a list where the number of arguments are high.
+
+CREATE operation on Person, AppUser and Patient tables. In the addNewTPatient function, we have to add a new patient. As Person is the super class whose sub class is AppUser, and AppUser's subclass is Patient; we have to insert the entries in all the three tables serially as the super classes are not concrete meaning they can't have a stanalone entry which is not present in one of their subclasses.In transition logic, if any 1 INSERT operation fails then the transaction doesn't get committed. Here, trycatch is used to rollback the changes if error occurs while inserting the entries in any of the INSERT operations. The argument is passed as list as there are many attribute values that need to be inserted.
+
+```{r}
+
+# Transaction in addNewTPatient function
+
+addNewTPatient <- function(w) {
+
+tryCatch(
+expr = {
+  
+dbBegin(practicum)
+
+sqlt5 <- paste0(" INSERT INTO Person(pId,age,email,gender,pFirstName,pLastName,phoneNumber,addressId)
+VALUES(",w[[1]],",", w[[2]],",","'",w[[3]],"'",",", "'", w[[4]], "'", ",", "'", w[[5]], "'",",", "'", w[[6]],"'", ",", w[[7]], ",", w[[8]],")")
+
+
+dbGetQuery(practicum, sqlt5)
+
+sqlt6 <- paste0(" INSERT INTO AppUser(pId,pLanguage, loggingDate, testResult)
+                  VALUES(",w[[1]],",","'",w[[9]],"'",",","'",w[[10]],"'",",", "'", w[[11]],"'",")")
+
+dbGetQuery(practicum, sqlt6)
+
+sqlt7 <- paste0(" INSERT INTO Patient(pId, healthReportValidated,
+                  typeOfTreatment, recovered)
+                  VALUES(",w[[1]],",", "'", w[[12]],"'",",","'",w[[13]],"'",",","'", w[[14]],"'",")")
+
+dbGetQuery(practicum, sqlt7)
+
+
+dbCommit(practicum)
+
+if(dbCommit(practicum) == TRUE)
+print("CREATE transaction commited")
+
+else{
+  print("CREATE transaction rolled back")
+  dbRollback(practicum)
+}
+ },
+error = function(e){print(paste("INSERT statement error : Transaction Rolled Back :", e))
+  dbRollback(practicum)
+  }
+)
+}
+
+
+# Creation of list which will be passed as an argument to addNewTPatient() function
+
+w <- list(tpId = 231,tage =23, temail = 'mikkel.neil@gmail.com', tgender = 'M',tpFirstName = 'Mikkel', tpLastName = 'Neilson',
+tphoneNumber = 9898899999,taddressId=20,tpLanguage= 'Hindi',tloggingDate = '2020-01-01 10:10:10 ',ttestResult = 'Positive', thealthReportValidated ='Yes',
+ttypeOfTreatment = 'Coronil' , trecovered = 'No' )
+
+
+# Function call to addNewTPatient() with argument as list w which contains the attribute values to be inserted in Person, AppUser and Patient tables.
+
+addNewTPatient(w)
+
+
+
+```
+
+<br>
+**Output to show that the values have been inserted in Person, AppUser and Patient tables by joining them and filtering the pId that was sent as the argument in the list**
+
+
+
+```{r}
+
+dbGetQuery(practicum,paste0(" SELECT * FROM Person p, AppUser a, Patient pt WHERE p.pId = a.pId AND a.pId = pt.pId AND p.pId=", w[[1]] ) )
+
+
+```
+
+READ operation on Location and Zip. Here, the SELECT statement will be executed for Location and Zip tables serially in a transaction for a particular zipCode which is being sent as an agument. 
+
+READ-ONLY transactions are important as In a highly concurrent application it could (theoretically) happen that data we have read in the first select is modified before the other selects are executed.
+
+If that is a situation  that could occur in our application then we should use a transaction to wrap our selects.
+
+There is no possible way to show that the operations worked in a READ-ONLY transaction as we don't have mult-iuser setup in our case to show the concurrency. So, in this case we have printed the message that the transaction commits if the dbCommit() value is TRUE.
+
+
+```{r}
+
+# Transaction in readTZip function
+
+readTZip <- function(zid) {
+  
+tryCatch(
+
+expr={ dbBegin(practicum)
+  
+sqlt3 <- paste0(" SELECT * FROM Location
+                  WHERE zipCode =", zid)
+
+dbGetQuery(practicum, sqlt3)
+
+sqlt4 <- paste0(" SELECT * FROM Zip
+                  WHERE zipCode =", zid)
+
+dbGetQuery(practicum, sqlt4)
+
+dbCommit(practicum)
+
+if(dbCommit(practicum) == TRUE)
+print("READ transaction commited")
+
+else{
+  print("READ transaction rolled back")
+  dbRollback(practicum)
+}
+
+},
+error=function(e){
+  print(paste("SELECT statement error : Transaction Rolled Back :", e))
+  dbRollback(practicum)
+}
+)
+}
+
+# Function Call to readTZip function with argument 66337 to view the particular record in both Location and Zip table serially
+
+readTZip(66337)
+
+```
+
+<br>
+**The database state to show the before image prior to the UPDATE operation for a particular zipCode from Location and  Zip tables which will be passed as an argument in the next step as zidOld.Here, the old zipCode will be displayed by joining the Location and Zip tables and filtering the old zipCode that was sent as the argument in the function**
+
+```{r}
+
+dbGetQuery(practicum, paste0("SELECT * FROM Location l, Zip z
+                       WHERE l.zipCode = z.zipCode AND l.zipCode =", 66337))
+
+```
+
+UPDATE operation on Location and Zip. 
+Here, the UPDATE operation will be performed on Location and Zip tables serially. If UPDATE operation is not implemented for one table then it will not be implemented for other table too. 2 arguments are being passed here, zidOld is the old value of zipCode which will be updated to the new value of zidNew. Normally, if we can't implement this due to referntial integrity constraint between Location and Zip table, but we can do this by using transactions.
+
+
+```{r}
+
+# Transaction in updateTZip function
+
+
+updateTZip <- function(zidOld, zidNew) {
+
+tryCatch(
+expr = {
+  
+dbBegin(practicum)
+  
+dbGetQuery(practicum,"SET @@FOREIGN_KEY_CHECKS=0")
+  
+sqlt1 <- paste0(" UPDATE Location SET zipCode =", zidNew,
+                " WHERE zipCode =", zidOld)
+
+dbGetQuery(practicum, sqlt1)
+
+sqlt2 <- paste0(" UPDATE Zip SET zipCode =", zidNew,
+                " WHERE zipCode =", zidOld  )
+
+dbGetQuery(practicum, sqlt2)
+
+dbGetQuery(practicum,"SET @@FOREIGN_KEY_CHECKS=1")
+
+dbCommit(practicum)
+
+if(dbCommit(practicum) == TRUE)
+print("UPDATE transaction Commited")
+
+else{
+  print("UPDATE transaction rolled back")
+  dbRollback(practicum)
+}
+},
+error = function(e){print(paste("UPDATE statement error : Transaction Rolled Back :", e))
+  dbRollback(practicum)
+  }
+)
+
+}
+
+
+# Function Call to updateTZip function with arguments 66337 and 10119 which are the old zipCode and new zipCode respectively.
+
+updateTZip(66337,10119)
+
+
+```
+
+<br>
+**Output to show that the values have been updated in Location and Zip tables by joining them and filtering the new zipCode that was sent as the argument in the function**
+```{r}
+dbGetQuery(practicum, paste("SELECT * FROM Location l, Zip z WHERE l.zipCode = z.zipCode AND (l.zipCode = 10119 OR l.zipCode =66337)"))
+
+```
+
+<br>
+**The database state to show the before image prior to the DELETE operation for a particular pId from Patient, AppUser and Person tables which will be passed as an argument in the next step by joining the tables and filtering the to be pId that is sent as the argument in the function in the next step.**
+
+
+```{r}
+
+dbGetQuery(practicum, paste0("SELECT * FROM Patient pt, AppUser a, Person p
+                       WHERE pt.pId = a.pId AND a.pId = p.pId AND pt.pId =", 231))
+
+```
+
+DELETE operation on Patient, AppUser and Person tables. Here, a record will be deleted from Patient, AppUser and Person tables in order as Person is a super class that has a subclass AppUser having a subclass Patient. If a record is just deleted from Patient table then it will still have information in AppUser and Person tables. As both the super classes are not concrete, this will violate the generalization. Thus, the record should be deleted from all 3 tables.
+
+```{r}
+
+# pId of the tables is passed as an argument to the function for which the record needs to be deleted.
+
+
+removeTPatient <- function(pId){
+
+tryCatch(
+expr = {
+  
+dbBegin(practicum)
+  
+sqlt8 <- paste0(" DELETE FROM Patient 
+                    WHERE pId =", pId)
+  
+dbGetQuery(practicum, sqlt8)
+  
+  
+sqlt9 <- paste0(" DELETE FROM AppUser 
+                    WHERE pId =", pId)
+  
+dbGetQuery(practicum, sqlt9)
+  
+sqlt10 <- paste0(" DELETE FROM Person 
+                    WHERE pId =", pId)
+  
+dbGetQuery(practicum, sqlt10)
+  
+  
+dbCommit(practicum)
+
+if(dbCommit(practicum) == TRUE)  
+print("DELETE transaction Commited")
+
+else{
+  print("DELETE transaction rolled back")
+  dbRollback(practicum)
+}
+  
+  },
+error = function(e){print(paste("DELETE statement error : Transaction Rolled Back :", e))
+  dbRollback(practicum)}
+)
+
+
+}
+
+
+# Function Call to removeTPatient function with argument 231 which is the pId for which the record will be deleted from all the 3 tables
+
+removeTPatient(231)
+
+
+```
+
+
+<br>
+**Output to show that the record has been deleted in Patient, AppUser and Person tables by joining them and filtering the deleted pId that was sent as the argument in the function. Here, the output has no rows as the record has been deleted in all the 3 tables**
+
+
+```{r}
+
+dbGetQuery(practicum, paste0("SELECT * FROM Patient pt, AppUser a, Person p
+                       WHERE pt.pId = a.pId AND a.pId = p.pId AND pt.pId =", 231))
+
+
+```
+
+
+
+
+## 8. Query plan for two alternatives of the same query
+
+The nested-loop join algorithm consists of a pair of nested FOR loops, one for each relation say, R and S. For each tuple r in R, every tuple s in S is retrieved and then checked whether the two tuples satisfy the join condition r[A]=s[B]. If the join condition is satisfied, then the values of these two tuples are concatenated, which is then added to the result.
+
+**Nested Loop Join is only preferable when both or one of the relations fit entirely in the main memory, the cost of join operation will be bR +bS block transfers.**
+
+In hash join algorithm, a hash function h is used to partition the tuples of each relation into sets of tuples with each set containing tuples that have the same hash value on the join attributes A of relation R and B of relation S. The algorithm is divided into two phases, namely, partitioning phase and probing phase. In partitioning (also called building ) phase, the tuples of relations R and S are partitioned into the hash file buckets using the same hash function h.
+
+**The main property of hash join is that the tuples in the partition P1 or R need to be joined with tuples in the partition P1 of S. This is because of the fact that if tuples of relation R with some hash value hash to i, then the tuples of relation S with same hash value also hash to i.**
+
+The hash join algorithm requires 3(bR +bS)+4n block transfers. 
+**The first term 3(bR +bS ) represents that the block transfer occurs three times**—once when the relations are read into the main memory for partitioning, second when they are written back to the disk and third, when each partition is read again during the joining phase.
+**The second term 4n represents an extra overhead (2n for each relation) of reading and writing of each partition to and from the disk **—since the number of blocks occupied by each partition is slightly more than b R +b S because of partially filled blocks. The extra overhead of 4n is generally very small as compared to bR +bS and hence, can be ignored.
+
+**Comparison between 2 joins** – 
+The difference is subtle, but the "matching" means that the nested loop join can make use of an index. So, a nested loop join can have very poor performance (if the tables are relatively large and there are no indexes) or it can have really good performance (if it can make use of an index).
+
+In a hash join, the database does a full-scan of the driving table, builds a RAM hash table, and then probes for matching rows in the other table.  For certain types of SQL, the hash join will execute faster than a nested loop join, but the hash join uses more RAM resources. 
+**Some queries will perform faster with NESTED LOOPS joins, some with HASH joins, while others favor sort-merge joins.**
+
+So, here is an attempt to design a query which fetches the name and age of people who have severe symptoms represented using different query mechanisms. The query plan automatically chooses from Nested loop join and hash join based on the above explanation.
+
+```{r}
+## explain query1
+explainquery1<-"EXPLAIN SELECT person.pFirstName, person.pLastName, person.age FROM person,symptom
+ WHERE 'Severe' = (
+ SELECT symptom.severity FROM appuser,has
+ WHERE appuser.pId = has.pId AND has.sId = symptom.sId
+ AND appuser.pId = person.pId)"
+
+resQuery1<-dbGetQuery(practicum, explainquery1)
+resQuery1
+
+```
+Query 1 : Here the four tables person, appuser, has, symptom are first joined. Then 'Severe' symptoms are filtered from the list after the join operation takes place. The resultant list contains 28 rows.
+
+After the analysis, illustrated below, we have observed that first the inner joins are applied which results into 2100 rows which further is filtered by "Severe" symptoms resulting into 28 rows. Also, the cost of all the operations/queries is 212.60 units while the time taken to execute the entire query lies between 3.386..14.072 units.
+Moreover, the execution is a little faster because of the already existing index on the primary key of appUser and Has each but it is delayed because ALL the rows are scanned by queries involving symptom and person tables.
+
+![Fig 8.1 :Query 1 for Query plan Analysis](D:/NEU/5200 DBMS/Practicum2/Query1.png)
+
+```{r}
+## explain query2
+explainquery2<-"EXPLAIN SELECT person.pFirstName, person.pLastName, person.age FROM person,appuser,has
+ WHERE person.pId = appuser.pId AND appuser.pId = has.pId AND has.sId IN (
+ SELECT symptom.sId FROM symptom
+ WHERE symptom.severity = 'Severe');"
+
+resQuery2<-dbGetQuery(practicum, explainquery2)
+
+resQuery2
+```
+
+Query 2 : Here firstly, 'Severe' symptoms are filtered from the list  which results into 7 rows and after that the join operation takes place resulting into 28 rows.
+Moreover, we have observed that the cost of all the operations/queries is 30.24 units while the time taken to execute the entire query lies between 17.086..18.222 units which is acceptable as the pages have to move in and out of main memory. However, when the pages are available in buffer space this time gets reduced by 1/100th.
+
+So to conclude, the performance is better in this case because of the already existing index on the primary key of appUser and Has each and, the delay is reduced because ALL the rows are scanned only by symptom and not person table. Additionally, the resources are in an efficient manner as the cost has improved much. Thus, Query 2 gives us a better query plan.
+
+![Fig 8.2 :Query 2 for Query plan Analysis](D:/NEU/5200 DBMS/Practicum2/Query2.png)
+
+## 9. Query plan after adding Index for a non-key attribute
+
+This query plan is an extension of Query 2 in Task 8. An index is added to the non-key attribute "severity" in table symptom. 
+
+When you have the index, the query planner can use the order that it reads data out of the indexes to do the nested loop without a sort, faster than a hash. Without the index it would do a sort, and the combination of sort + loop is slower than hash.
+
+```{r}
+##alter table to add index on attribute severity
+
+alterTable1<- "ALTER TABLE symptom ADD INDEX symptomIndex (severity);"
+
+tryCatch(
+  expr={altQuery1<-dbSendQuery(practicum, alterTable1)
+  print("Successfully added the column")
+  },
+  error=function(e){
+    print(paste("Error occurred during column addition: ",e))
+  }
+)
+```
+
+Following is the performance analysis after adding the index.
+
+```{r}
+##explain query with index
+explainquery1<-"EXPLAIN SELECT person.pFirstName, person.pLastName, person.age FROM person,appuser,has
+ WHERE person.pId = appuser.pId AND appuser.pId = has.pId AND has.sId IN (
+ SELECT symptom.sId FROM symptom
+ WHERE symptom.severity = 'Severe')"
+
+resQuery2<-dbGetQuery(practicum, explainquery1)
+
+resQuery2
+
+```
+
+After creating the index, the cost has hiked because first the scanning of the index happens in the index directory and then the records are scanned in the original table pointed by the corresponding indexes. These records are usually scattered over several pages. Moreover, the index is of type Secondary Index as it has been added on an unordered and a non-key attribute- severity.
+
+**The cost will further increase if the size of the database tends to grow which will lead to the creation of the multi-level indexes.**
+
+But, the index has drastically improved the execution time from 17.086..18.222 units to 1.793..2.136 units. Also, the query is not accessing all the rows in any table. This increase in the accessing speed along with the reduction in the number of accessed rows to 7 are making this query plan a best fit.
+
+
+![Fig 9.1 :Query 2 after adding index](D:/NEU/5200 DBMS/Practicum2/Query2I.png)
